@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.photonvision.common.configuration.CameraConfiguration;
-import org.photonvision.common.configuration.ConfigManager;
 import org.photonvision.vision.camera.CameraQuirk;
 import org.photonvision.vision.processes.VisionSourceSettables;
 
@@ -104,12 +103,6 @@ public class GenericUSBCameraSettables extends VisionSourceSettables {
         // first.
         var autoExpProp = findProperty("exposure_auto", "auto_exposure");
 
-        if (expProp.isPresent()) {
-            exposureAbsProp = expProp.get();
-            this.minExposure = exposureAbsProp.getMin();
-            this.maxExposure = exposureAbsProp.getMax();
-        }
-
         if (autoExpProp.isPresent()) {
             autoExposureProp = autoExpProp.get();
         }
@@ -175,7 +168,27 @@ public class GenericUSBCameraSettables extends VisionSourceSettables {
         }
     }
 
+    @Override
     public void setAutoExposure(boolean cameraAutoExposure) {
+        if (configuration.cameraQuirks.hasQuirk(CameraQuirk.ArduOV9281Controls)
+                && !cameraAutoExposure) {
+            // OV9281 on Linux seems to sometimes ignore our exposure requests on first boot if we're in
+            // manual mode. Poking the camera into and out of auto exposure seems to fix it.
+            try {
+                setAutoExposureImpl(false);
+                Thread.sleep(2000);
+                setAutoExposureImpl(true);
+                Thread.sleep(2000);
+                setAutoExposureImpl(false);
+            } catch (InterruptedException e) {
+                logger.error("Thread interrupted while setting OV9281 exposure!", e);
+            }
+        } else {
+            setAutoExposureImpl(cameraAutoExposure);
+        }
+    }
+
+    public void setAutoExposureImpl(boolean cameraAutoExposure) {
         logger.debug("Setting auto exposure to " + cameraAutoExposure);
 
         if (!cameraAutoExposure) {
@@ -275,21 +288,15 @@ public class GenericUSBCameraSettables extends VisionSourceSettables {
         videoModes = new HashMap<>();
         List<VideoMode> videoModesList = new ArrayList<>();
         try {
-            VideoMode[] modes;
-
-            modes = camera.enumerateVideoModes();
-
-
-            for (VideoMode videoMode : modes) {
-                // Filter unknown modes
-                if ( videoMode.pixelFormat == PixelFormat.kUnknown) {
+            for (VideoMode videoMode : camera.enumerateVideoModes()) {
+                // Filter grey modes
+                if ( // videoMode.pixelFormat == PixelFormat.kGray ||
+                         videoMode.pixelFormat == PixelFormat.kUnknown) {
                     continue;
                 }
 
-                if (configuration.cameraQuirks.hasQuirk(CameraQuirk.FPSCap100)) {
-                    if (videoMode.fps > 100) {
-                        continue;
-                    }
+                if (configuration.cameraQuirks.hasQuirk(CameraQuirk.FPSCap100) && videoMode.fps > 100) {
+                    continue;
                 }
 
                 videoModesList.add(videoMode);
@@ -305,17 +312,12 @@ public class GenericUSBCameraSettables extends VisionSourceSettables {
                         .distinct() // remove redundant video mode entries
                         .sorted(((a, b) -> (b.width + b.height) - (a.width + a.height)))
                         .collect(Collectors.toList());
+        // The ordering is usually more logical when done like this. It typically puts higher FPSes
+        // closer to the bottom.
         Collections.reverse(sortedList);
 
-        // On vendor cameras, respect blacklisted indices
-        var indexBlacklist =
-                ConfigManager.getInstance().getConfig().getHardwareConfig().blacklistedResIndices;
-        for (int badIdx : indexBlacklist) {
-            sortedList.remove(badIdx);
-        }
-
-        for (VideoMode videoMode : sortedList) {
-            videoModes.put(sortedList.indexOf(videoMode), videoMode);
+        for (int i = 0; i < sortedList.size(); i++) {
+            videoModes.put(i, sortedList.get(i));
         }
 
         // If after all that we still have no video modes, not much we can do besides

@@ -131,6 +131,10 @@ PhotonPipelineResult PhotonCameraSim::Process(
   blankFrame.assignTo(videoSimFrameRaw);
 
   for (const auto& tgt : targets) {
+    if (detectableTgts.size() >= 50) {
+      break;
+    }
+
     if (!CanSeeTargetPose(cameraPose, tgt)) {
       continue;
     }
@@ -335,7 +339,6 @@ PhotonPipelineResult PhotonCameraSim::Process(
     }
   }
 
-  heartbeatCounter++;
   return PhotonPipelineResult{
       PhotonPipelineMetadata{heartbeatCounter, 0,
                              units::microsecond_t{latency}.to<int64_t>(),
@@ -388,6 +391,7 @@ void PhotonCameraSim::SubmitProcessedFrame(const PhotonPipelineResult& result,
   ts.cameraDistortionPublisher.Set(distortionView, ReceiveTimestamp);
 
   ts.heartbeatPublisher.Set(heartbeatCounter, ReceiveTimestamp);
+  heartbeatCounter++;
 
   ts.subTable->GetInstance().Flush();
 }

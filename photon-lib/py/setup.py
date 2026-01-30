@@ -10,7 +10,7 @@ gitDescribeResult = (
 )
 
 m = re.search(
-    r"(v[0-9]{4}\.[0-9]{1}\.[0-9]{1})-?((?:beta)?(?:alpha)?)-?([0-9\.]*)",
+    r"v([0-9]{4}\.[0-9]{1}\.[0-9]{1})-?((?:beta|alpha|rc)?)-?([0-9\.]*)",
     gitDescribeResult,
 )
 
@@ -18,13 +18,13 @@ m = re.search(
 # which should be PEP440 compliant
 if m:
     versionString = m.group(0)
-    # Hack -- for strings like v2024.1.1, do NOT add matruity/suffix
+    # Hack -- for strings like v2024.1.1, do NOT add maturity/suffix
     if len(m.group(2)) > 0:
         print("using beta group matcher")
         prefix = m.group(1)
         maturity = m.group(2)
         suffix = m.group(3).replace(".", "")
-        versionString = f"{prefix}.{maturity}.{suffix}"
+        versionString = f"{prefix}{maturity}{suffix}"
     else:
         split = gitDescribeResult.split("-")
         if len(split) == 3:
@@ -33,8 +33,7 @@ if m:
             versionString = f"{year[1:]}post{commits}"
             print("using dev release " + versionString)
         else:
-            year = gitDescribeResult
-            versionString = year[1:]
+            versionString = gitDescribeResult[1:]
             print("using full release " + versionString)
 
 
@@ -58,12 +57,12 @@ setup(
     package_data={"photonlibpy": ["py.typed"]},
     version=versionString,
     install_requires=[
-        "numpy~=2.1",
-        "wpilib<2026,>=2025.2.1",
-        "robotpy-wpimath<2026,>=2025.2.1",
-        "robotpy-apriltag<2026,>=2025.2.1",
-        "robotpy-cscore<2026,>=2025.2.1",
-        "pyntcore<2026,>=2025.2.1",
+        "numpy~=2.3",
+        "wpilib>=2026.2.1,<2027",
+        "robotpy-wpimath>=2026.2.1,<2027",
+        "robotpy-apriltag>=2026.2.1,<2027",
+        "robotpy-cscore>=2026.2.1,<2027",
+        "pyntcore>=2026.2.1,<2027",
         "opencv-python;platform_machine!='roborio'",
     ],
     description=descriptionStr,

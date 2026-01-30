@@ -20,41 +20,30 @@ package org.photonvision.common.configuration;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import edu.wpi.first.cscore.UsbCameraInfo;
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
 import java.util.List;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.photonvision.common.LoadJNI;
+import org.photonvision.common.configuration.NeuralNetworkModelManager.Family;
 import org.photonvision.common.util.TestUtils;
 import org.photonvision.vision.camera.CameraQuirk;
 import org.photonvision.vision.camera.PVCameraInfo;
 import org.photonvision.vision.pipeline.AprilTagPipelineSettings;
 import org.photonvision.vision.pipeline.ColoredShapePipelineSettings;
+import org.photonvision.vision.pipeline.ObjectDetectionPipelineSettings;
 import org.photonvision.vision.pipeline.ReflectivePipelineSettings;
 
 public class SQLConfigTest {
-    private static Path tmpDir;
+    @TempDir private static Path tmpDir;
 
     @BeforeAll
     public static void init() {
-        TestUtils.loadLibraries();
-        try {
-            tmpDir = Files.createTempDirectory("SQLConfigTest");
-        } catch (IOException e) {
-            System.out.println("Couldn't create temporary directory, using current directory");
-            tmpDir = Path.of("jdbc_test", "temp");
-        }
-    }
-
-    @AfterAll
-    public static void cleanUp() throws IOException {
-        Files.walk(tmpDir).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
+        LoadJNI.loadLibraries();
     }
 
     @Test
@@ -117,5 +106,53 @@ public class SQLConfigTest {
                                     .cameraQuirks
                                     .hasQuirk(c));
         }
+    }
+
+    void common2025p3p1Assertions(PhotonConfiguration config) {
+        // Make sure we got 8 cameras
+        assertEquals(8, config.getCameraConfigurations().size());
+
+        // Make sure exactly 2 have object detection pipelines
+        long count =
+                config.getCameraConfigurations().values().stream()
+                        .filter(
+                                c ->
+                                        c.pipelineSettings.stream()
+                                                .anyMatch(s -> s instanceof ObjectDetectionPipelineSettings))
+                        .count();
+        assertEquals(2, count);
+    }
+
+    @Test
+    public void testLoadNewNNMM() throws JsonProcessingException {
+        var folder = TestUtils.getConfigDirectoriesPath(false).resolve("2025.3.1-old-nnmm");
+        var cfgManager = new ConfigManager(folder, new SqlConfigProvider(folder));
+
+        // Replace global configmanager
+        ConfigManager.INSTANCE = cfgManager;
+
+        assertDoesNotThrow(cfgManager::load);
+
+        System.out.println(cfgManager.getConfig());
+        common2025p3p1Assertions(cfgManager.getConfig());
+
+        // And we now see two models
+        NeuralNetworkModelManager.getInstance();
+        // force us to allow RKNN
+        NeuralNetworkModelManager.getInstance().supportedBackends.add(Family.RKNN);
+        NeuralNetworkModelManager.getInstance().discoverModels();
+        assertEquals(5, NeuralNetworkModelManager.getInstance().models.get(Family.RKNN).size());
+
+        ConfigManager.getInstance().saveToDisk();
+
+        // Now that we have the config saved, load it again
+        var reloadedProvider = new SqlConfigProvider(folder);
+        reloadedProvider.load();
+        common2025p3p1Assertions(reloadedProvider.getConfig());
+
+        // And make sure NNPM has all 5 models
+        assertEquals(5, reloadedProvider.getConfig().neuralNetworkPropertyManager().getModels().length);
+
+        ConfigManager.INSTANCE = null;
     }
 }

@@ -32,11 +32,15 @@ package org.photonvision;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-@SuppressWarnings("ALL")
+@SuppressWarnings("doclint")
 public final class PhotonVersion {
     public static final String versionString = "${version}";
     public static final String buildDate = "${date}";
     public static final boolean isRelease = !versionString.startsWith("dev");
+
+    // Versions of dependant libraries
+    public static final String wpilibTargetVersion = "${wpilibVersion}";
+    public static final String opencvTargetVersion = "${opencvVersion}";
 
     public static final boolean versionMatches(String other) {
         String c = versionString;

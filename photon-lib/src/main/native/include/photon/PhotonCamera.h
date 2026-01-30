@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include <frc/Alert.h>
 #include <networktables/BooleanTopic.h>
 #include <networktables/DoubleArrayTopic.h>
 #include <networktables/DoubleTopic.h>
@@ -103,6 +104,16 @@ class PhotonCamera {
   bool GetDriverMode() const;
 
   /**
+   * @param fpsLimit The FPS limit to set. Use -1 for unlimited FPS.
+   */
+  void SetFPSLimit(int fpsLimit);
+
+  /**
+   * @return The FPS limit set on the camera, or -1 if no limit is set.
+   */
+  int GetFPSLimit() const;
+
+  /**
    * Request the camera to save a new image file from the input
    * camera stream with overlays.
    * Images take up space in the filesystem of the PhotonCamera.
@@ -156,24 +167,41 @@ class PhotonCamera {
    */
   const std::string_view GetCameraName() const;
 
+  /**
+   * Returns whether the camera is connected and actively returning new data.
+   * Connection status is debounced.
+   *
+   * @return True if the camera is actively sending frame data, false otherwise.
+   */
+  bool IsConnected();
+
   using CameraMatrix = Eigen::Matrix<double, 3, 3>;
   using DistortionMatrix = Eigen::Matrix<double, 8, 1>;
 
   /**
-   * @brief Get the camera calibration matrix, in standard OpenCV form
+   * Get the camera calibration matrix, in standard OpenCV form
    *
    * @return std::optional<cv::Mat>
    */
   std::optional<CameraMatrix> GetCameraMatrix();
 
   /**
-   * @brief Get the camera calibration distortion coefficients, in OPENCV8 form.
-   * Higher order terms are set to zero.
+   * Returns the camera calibration's distortion coefficients, in OPENCV8 form.
+   * Higher-order terms are set to 0
    *
-   * @return std::optional<cv::Mat>
+   * @return The distortion coefficients in a 8x1 matrix, if they are published
+   * by the camera. Empty otherwise.
    */
   std::optional<DistortionMatrix> GetDistCoeffs();
 
+  /**
+   * Sets whether or not coprocessor version checks will occur. Setting this to
+   * true will silence all console warnings about coproccessor connection, so be
+   * careful when enabling this and ensure all your coprocessors are
+   * communicating to the robot properly and everything has matching versions.
+   *
+   * @param enabled Whether or not to enable coprocessor version checks
+   */
   static void SetVersionCheckEnabled(bool enabled);
 
   std::shared_ptr<nt::NetworkTable> GetCameraTable() const { return rootTable; }
@@ -201,19 +229,35 @@ class PhotonCamera {
 
   nt::BooleanSubscriber driverModeSubscriber;
   nt::BooleanPublisher driverModePublisher;
+  nt::IntegerSubscriber fpsLimitSubscriber;
+  nt::IntegerPublisher fpsLimitPublisher;
+
   nt::IntegerSubscriber ledModeSubscriber;
+
+  nt::IntegerSubscriber heartbeatSubscriber;
 
   nt::MultiSubscriber topicNameSubscriber;
 
   std::string path;
   std::string cameraName;
 
+  frc::Alert disconnectAlert;
+  frc::Alert timesyncAlert;
+
  private:
   units::second_t lastVersionCheckTime = 0_s;
   static bool VERSION_CHECK_ENABLED;
-  inline static int InstanceCount = 0;
+  inline static int InstanceCount = 1;
+
+  units::second_t prevTimeSyncWarnTime = 0_s;
+
+  int prevHeartbeatValue = -1;
+  units::second_t prevHeartbeatChangeTime = 0_s;
 
   void VerifyVersion();
+
+  void UpdateDisconnectAlert();
+  void CheckTimeSyncOrWarn(photon::PhotonPipelineResult& result);
 
   std::vector<std::string> tablesThatLookLikePhotonCameras();
 };
